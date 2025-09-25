@@ -19,7 +19,7 @@ def test_generate_label() -> None:
     image.
     """
 
-    boxes = [[1, 0.5, 0.5, 0.2, 0.3], [1, 0.5, 0.5, 0.2, 0.3], [1, 0, 0, 0.2, 0.3]]
+    boxes = [[0, 0.5, 0.5, 0.2, 0.3], [0, 0.5, 0.5, 0.2, 0.3], [0, 0, 0, 0.2, 0.3]]
     label = DATASET._generate_label(boxes)
 
     # First bounding box
@@ -31,7 +31,7 @@ def test_generate_label() -> None:
     ii, jj = int(S * boxes[2][1]), int(S * boxes[2][2])
     assert label.shape == (S, S, 5 * B + C), "Incorrect shape for the label."
     assert label[ii, jj, C] == 1.0, "Incorrect 'has object' for the label."
-    assert label[ii, jj, 1] == 1.0, "Incorrect class for the label"
+    assert label[ii, jj, 0] == 1.0, "Incorrect class for the label"
     # In this cell nothing should be detected
     assert (
         label[-1, -1, C] == 0.0 and label[-1, -1, 1] == 0.0
