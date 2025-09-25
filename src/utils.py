@@ -25,7 +25,7 @@ def iou(
 
     Returns:
         Intersection over Union for each pair of the batch. Dimensions:
-        [batch_size, S, S].
+        [batch_size, S, S, 1].
     """
 
     # TODO
