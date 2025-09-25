@@ -130,7 +130,7 @@ class YOLOLoss(nn.Module):
             targets: Ground truths. Dimensions: [batch, S, S, 5 * B + C].
 
         Returns:
-            YOLO loss and each of the sub-losses.
+            Each of the sub-losses in the order they are coded and final YOLO loss.
         """
 
         # TODO
