@@ -47,15 +47,15 @@ class RaccoonDataset(Dataset):
         """
         Generates the labels with coordinates respect to the cells, not the hole image.
         We will assume at most we can have one object per cell. Therefore, the
-        dimensions of the generated label will be [S, S, 5 * C + B]. If we wanted to
-        detect at most n objects the dimensions would be [S, S, n, 5 * C + B].
+        dimensions of the generated label will be [S, S, C + 5 * B]. If we wanted to
+        detect at most n objects the dimensions would be [S, S, n, C + 5 * B].
 
         Args:
             boxes: Labels with respect to the hole image. Each label has 5 elements:
                 class, center_x, center_y, width and height.
 
         Returns:
-            Labels with respect to the cells. Dimensions: [S, S, 5 * C + B].
+            Labels with respect to the cells. Dimensions: [S, S, C + 5 * B].
         """
 
         # TODO
