@@ -69,7 +69,7 @@ class RaccoonDataset(Dataset):
 
         Returns:
             The image and its labels. Dimensions of the image: [channels, height,
-            width]. Dimensions of the labels: [S, S, 5 * C + B].
+            width]. Dimensions of the labels: [S, S, 5 * B + C].
         """
 
         # TODO
