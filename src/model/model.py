@@ -6,7 +6,6 @@ import torch
 from PIL import Image, ImageDraw
 from PIL.JpegImagePlugin import JpegImageFile
 from torch import nn
-from torchvision import transforms
 
 from src.constants import MODEL, TARGET_SIZE_IMG, B, C, S
 from src.utils import nms, to_image_coords
@@ -99,6 +98,24 @@ class YOLO(nn.Module):
         """
 
         # TODO
+        layers = []
+        for layer in architecture:
+            if type(layer) == tuple:
+                kernel, out_channels, stride, padding = layer
+                layers.append(
+                    CNNBlock(
+                        in_channels,
+                        out_channels,
+                        kernel,
+                        stride,
+                        padding,
+                    )
+                )
+                in_channels = out_channels
+            elif layer == "M":
+                layers.append(nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2)))
+        return nn.Sequential(*layers)
+    
 
     def _create_mlp(self) -> nn.Module:
         """
@@ -110,6 +127,13 @@ class YOLO(nn.Module):
         """
 
         # TODO
+        return nn.Sequential(
+            nn.Flatten(),
+            nn.LazyLinear(496),  # Use LazyLinear to automatically adapt to input size
+            nn.LeakyReLU(0.1),
+            nn.Linear(496, S * S * (C + B * 5)),
+        )
+    
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -123,6 +147,9 @@ class YOLO(nn.Module):
         """
 
         # TODO
+        x = self.cnn(x)
+        x = self.mlp(x)
+        return x.view(-1, S, S, 5 * B + C) # Reshape to [batch, S, S, 5*B + C]
 
     def predict(self, img_path: str) -> list[torch.Tensor]:
         """
@@ -135,6 +162,7 @@ class YOLO(nn.Module):
             Bounding boxes after NMS. Each one has dimension C + 5 and the last 4
             elements indicate the coordinates of the box.
         """
+        from torchvision import transforms
 
         self.eval()
 

@@ -25,10 +25,40 @@ def iou(
 
     Returns:
         Intersection over Union for each pair of the batch. Dimensions:
-        [batch_size, S, S, 1].
+        [batch_size, S, S].
     """
 
     # TODO
+
+    # Prediction Coordeinates
+    box1_x1 = boxes_preds[..., 0:1] - boxes_preds[..., 2:3] / 2
+    box1_y1 = boxes_preds[..., 1:2] - boxes_preds[..., 3:4] / 2
+    box1_x2 = boxes_preds[..., 0:1] + boxes_preds[..., 2:3] / 2
+    box1_y2 = boxes_preds[..., 1:2] + boxes_preds[..., 3:4] / 2
+
+    # Label Coordinates
+    box2_x1 = boxes_labels[..., 0:1] - boxes_labels[..., 2:3] / 2
+    box2_y1 = boxes_labels[..., 1:2] - boxes_labels[..., 3:4] / 2
+    box2_x2 = boxes_labels[..., 0:1] + boxes_labels[..., 2:3] / 2
+    box2_y2 = boxes_labels[..., 1:2] + boxes_labels[..., 3:4] / 2
+
+    # Intersection Coordinates
+    x1 = torch.max(box1_x1, box2_x1)
+    y1 = torch.max(box1_y1, box2_y1)
+    x2 = torch.min(box1_x2, box2_x2)
+    y2 = torch.min(box1_y2, box2_y2)
+
+    # Intersection Area
+    intersection = torch.clamp(x2 - x1, min=0) * torch.clamp(y2 - y1, min=0)
+    # Union Area
+    box1_area = abs((box1_x2 - box1_x1) * (box1_y2 - box1_y1))
+    box2_area = abs((box2_x2 - box2_x1) * (box2_y2 - box2_y1))
+    union = box1_area + box2_area - intersection + EPSILON
+    # IoU
+    iou = intersection / union
+
+    return iou
+
 
 
 def nms(
@@ -53,6 +83,49 @@ def nms(
     """
 
     # TODO
+    if len(predicted_boxes) == 0:
+        return []
+    
+    boxes = torch.stack(predicted_boxes) # Convert list to tensor for easier manipulation
+
+    # Filter by objectness threshold
+    obj_mask = boxes[:, C] >= threshold_confidence # Keep boxes with objectness >= threshold, dimensions [num_boxes]
+    boxes = boxes[obj_mask] # Apply mask to boxes, dimensions [num_filtered_boxes, C + 5]
+
+    if len(boxes) == 0:
+        return []
+    
+    # Sort boxes by confidence score in descending order
+    boxes = boxes[torch.argsort(boxes[:, C], descending=True)]
+    keep_boxes = []
+    while boxes.size(0):
+        # Select the box with the highest confidence
+        current_box = boxes[0]
+        keep_boxes.append(current_box)
+        if boxes.size(0) == 1:
+            break
+        # Compute IoU of the current box with the rest
+        ious = iou(
+            current_box[C + 1 :].unsqueeze(0).unsqueeze(0).unsqueeze(0), # Shape [1, 1, 1, 4]
+            boxes[1:, C + 1 :].unsqueeze(1).unsqueeze(1), # Shape [num_boxes - 1, 1, 4]
+        ).squeeze() # Shape [num_boxes - 1]
+        # Create a mask to filter out boxes with high IoU and same class
+        if C == 1:
+            class_mask = torch.ones(boxes[1:].size(0), dtype=torch.bool)  # Asumir misma clase por defecto
+            current_class_prob = current_box[0]
+            other_class_probs = boxes[1:, 0] 
+            class_mask = torch.abs(current_class_prob - other_class_probs) < 0.5
+        else:
+            class_mask = boxes[1:, :C].argmax(dim=1) == current_box[:C].argmax(dim=0)
+            
+
+
+        iou_mask = ious < threshold_repeated # Shape [num_boxes - 1]
+        combined_mask = ~(class_mask & ~iou_mask) # Keep boxes with different class or low IoU
+        boxes = boxes[1:][combined_mask] # Apply mask to boxes
+    return keep_boxes
+
+        
 
 
 def to_image_coords(boxes: torch.Tensor, img_w: int, img_h: int) -> list[torch.Tensor]:
@@ -71,6 +144,52 @@ def to_image_coords(boxes: torch.Tensor, img_w: int, img_h: int) -> list[torch.T
     """
 
     # TODO
+    cell_w = img_w / S
+    cell_h = img_h / S
+
+    i_grid, j_grid = torch.meshgrid(torch.arange(S), torch.arange(S), indexing='ij')
+    i_grid = i_grid.float()
+    j_grid = j_grid.float()
+    # We create a grid with the coordinates of the top-left corner of each cell
+    # Dimensions: [S, S]
+
+    boxes_image = []
+
+    for b in range(B): 
+        start_idx = b *5
+        end_idx = start_idx + 5 + C
+        box_data = boxes[..., start_idx:end_idx] # Shape [S, S, 5 + C]
+
+        obj_mask = box_data[..., C] >= 0 # Objectness mask, shape [S, S]
+        if obj_mask.sum() == 0:
+            continue
+
+        rel_x = box_data[..., C+1] # Relative x, shape [S, S]
+        rel_y = box_data[..., C+2] # Relative y, shape [S, S]
+        w = box_data[..., C+3] # Relative width, shape [S, S]
+        h = box_data[..., C+4] # Relative height, shape [S, S]
+
+        abs_x = (j_grid + rel_x) * cell_w # Absolute x, shape [S, S]
+        abs_y = (i_grid + rel_y) * cell_h # Absolute y, shape [S, S]
+        abs_w = w * cell_w # Absolute width, shape [S, S]
+        abs_h = h * cell_h # Absolute height, shape [S, S]
+
+        valid_indices = torch.nonzero(obj_mask, as_tuple=False) # Indices of valid boxes, shape [num_valid_boxes, 2]
+
+        for idx in valid_indices:
+            i,j = idx[0].item(), idx[1].item()
+
+            new_box = torch.zeros(C + 5)
+            new_box[:C] = box_data[i, j, :C] # Class probabilities
+            new_box[C] = box_data[i, j, C] # Objectness
+            new_box[C + 1] = abs_x[i, j] # x
+            new_box[C + 2] = abs_y[i, j] # y
+            new_box[C + 3] = abs_w[i, j] # width
+            new_box[C + 4] = abs_h[i, j] # height
+            boxes_image.append(new_box)
+
+
+    return boxes_image
 
 
 # This last part is just to calculate the mAP. It is a little bit annoying.

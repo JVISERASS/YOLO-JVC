@@ -7,7 +7,7 @@ import os
 import torch
 from torch.utils.data import DataLoader
 
-from model.train import Trainer
+from src.model.train import Trainer
 from src.constants import BATCH_SIZE
 
 TRAINER = Trainer()
